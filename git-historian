@@ -66,6 +66,14 @@ def self.git_diff(repo, from_rev, to_rev)
   end
 end
 
+def self.ascii_green(msg)
+  "\e[32m#{msg}\e[0m"
+end
+
+def self.ascii_red(msg)
+  "\e[31m#{msg}\e[0m"
+end
+
 config = parse_options(ARGV)
 
 commits = git_log(config.repository)
@@ -78,7 +86,11 @@ commits.each do |commit|
   if commit[:date] == commit[:date].beginning_of_week
     if previous_commit && !dates_done.include?(commit[:date])
       stats = git_diff(config.repository, previous_commit[:hash], commit[:hash])
-      puts "#{commit[:date]}, #{stats[:files]}, #{stats[:inserted]}, #{stats[:deleted]}"
+      puts [ commit[:date],
+        stats[:files].to_s.rjust(5),
+        ascii_green("+#{stats[:inserted]}".rjust(7)),
+        ascii_red("-#{stats[:deleted]}".rjust(7))
+      ].join(' ')
     end
     dates_done << commit[:date]
     previous_commit = commit
