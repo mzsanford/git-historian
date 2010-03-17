@@ -36,7 +36,7 @@ end
 def self.git_log(repo)
   old_dir = Dir.pwd
   Dir.chdir(repo)
-  log_data = %x{git log}
+  log_data = %x{git log --first-parent --topo-order}
   Dir.chdir(old_dir)
   commit_data = log_data.split(/commit /m).reverse
   commit_data.map do |blob|
@@ -55,7 +55,7 @@ end
 def self.git_diff(repo, from_rev, to_rev)
   old_dir = Dir.pwd
   Dir.chdir(repo)
-  diff_data = %x/git diff --stat #{from_rev}..#{to_rev}/
+  diff_data = %x/git diff --shortstat #{from_rev}..#{to_rev}/
   Dir.chdir(old_dir)
   if diff_data =~ /(\d+) files.* (\d+) insert.* (\d+) delet/
     {
