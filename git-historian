@@ -18,7 +18,6 @@ def self.parse_options(args)
     opts.on("-r", "--repository REPOSITORY",
            "Location of the local git repository",
            "  (default: current directory)") do |repo|
-     options.inplace = true
      options.repository = repo || '.'
 
      unless File.exist?(options.repository)
@@ -26,6 +25,12 @@ def self.parse_options(args)
        exit
      end
    end
+
+   opts.on("-f", "--format FORMAT",
+          "Output format",
+          "(options: csv, normal. default: normal)") do |fmt|
+    options.format = :csv if fmt == "csv"
+  end
 
    opts.parse!(args)
   end
@@ -74,6 +79,30 @@ def self.ascii_red(msg)
   "\e[31m#{msg}\e[0m"
 end
 
+def self.format_csv(commit, stats)
+  [ commit[:date],
+    stats[:files],
+    stats[:inserted],
+    stats[:deleted]
+  ].join(',')
+end
+
+def self.format_normal(commit, stats)
+  [ commit[:date],
+    stats[:files].to_s.rjust(5),
+    ascii_green("+#{stats[:inserted]}".rjust(7)),
+    ascii_red("-#{stats[:deleted]}".rjust(7))
+  ].join(' ')
+end
+
+def self.format_output(commit, stats, config)
+  if config.format == :csv
+    format_csv(commit, stats)
+  else
+    format_normal(commit, stats)
+  end
+end
+
 config = parse_options(ARGV)
 
 commits = git_log(config.repository)
@@ -86,11 +115,7 @@ commits.each do |commit|
   if commit[:date] == commit[:date].beginning_of_week
     if previous_commit && !dates_done.include?(commit[:date])
       stats = git_diff(config.repository, previous_commit[:hash], commit[:hash])
-      puts [ commit[:date],
-        stats[:files].to_s.rjust(5),
-        ascii_green("+#{stats[:inserted]}".rjust(7)),
-        ascii_red("-#{stats[:deleted]}".rjust(7))
-      ].join(' ')
+      puts format_output(commit, stats, config)
     end
     dates_done << commit[:date]
     previous_commit = commit
