@@ -1,0 +1,86 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'date'
+require 'active_support'
+
+# Options processing
+require 'optparse'
+require 'ostruct'
+
+def self.parse_options(args)
+  options = OpenStruct.new
+  options.repository = "."
+
+  OptionParser.new do |opts|
+    opts.banner = "Usage: git-historian [options]"
+
+    opts.on("-r", "--repository REPOSITORY",
+           "Location of the local git repository",
+           "  (default: current directory)") do |repo|
+     options.inplace = true
+     options.repository = repo || '.'
+
+     unless File.exist?(options.repository)
+       puts "ERROR: Repository must be a directory"
+       exit
+     end
+   end
+
+   opts.parse!(args)
+  end
+
+  options
+end
+
+def self.git_log(repo)
+  old_dir = Dir.pwd
+  Dir.chdir(repo)
+  log_data = %x{git log}
+  Dir.chdir(old_dir)
+  commit_data = log_data.split(/commit /m).reverse
+  commit_data.map do |blob|
+    begin
+    {
+      :hash => blob.scan(/^([a-z0-9]+)\n/)[0][0],
+      :author => blob.scan(/Author:\s+(.*?)\n/)[0][0],
+      :date => Date.parse(blob.scan(/Date:\s+(.*?)\n/)[0][0])
+    }
+    rescue
+      nil
+    end
+  end.compact
+end
+
+def self.git_diff(repo, from_rev, to_rev)
+  old_dir = Dir.pwd
+  Dir.chdir(repo)
+  diff_data = %x/git diff --stat #{from_rev}..#{to_rev}/
+  Dir.chdir(old_dir)
+  if diff_data =~ /(\d+) files.* (\d+) insert.* (\d+) delet/
+    {
+      :files => $1, :inserted => $2, :deleted => $3
+    }
+  else
+    nil
+  end
+end
+
+config = parse_options(ARGV)
+
+commits = git_log(config.repository)
+
+dates_done = Set.new
+previous_commit = nil
+
+puts "date, files changed, lines added, lines removed"
+commits.each do |commit|
+  if commit[:date] == commit[:date].beginning_of_week
+    if previous_commit && !dates_done.include?(commit[:date])
+      stats = git_diff(config.repository, previous_commit[:hash], commit[:hash])
+      puts "#{commit[:date]}, #{stats[:files]}, #{stats[:inserted]}, #{stats[:deleted]}"
+    end
+    dates_done << commit[:date]
+    previous_commit = commit
+  end
+end
