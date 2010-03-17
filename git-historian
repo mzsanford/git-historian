@@ -8,6 +8,86 @@ require 'active_support'
 require 'optparse'
 require 'ostruct'
 
+class GitHistorian
+  def initialize(config)
+    @repoistory = config.repository
+    @format = config.format
+  end
+
+  def commits
+    log_data = git_output("git log --first-parent --topo-order")
+    commit_data = log_data.split(/\ncommit /m).reverse
+    commit_data.map do |blob|
+      begin
+      {
+        :hash => blob.scan(/^([a-z0-9]+)\n/)[0][0],
+        :author => blob.scan(/Author:\s+(.*?)\n/)[0][0],
+        :date => Date.parse(blob.scan(/Date:\s+(.*?)\n/)[0][0])
+      }
+      rescue
+        nil
+      end
+    end.compact
+  end
+
+  def diff(from_commit, to_commit)
+    diff_data = git_output("git diff --shortstat #{from_commit[:hash]}..#{to_commit[:hash]}")
+    if diff_data =~ /(\d+) files.* (\d+) insert.* (\d+) delet/
+      {
+        :files => $1, :inserted => $2, :deleted => $3
+      }
+    else
+      nil
+    end
+  end
+
+  def formatted_diff(current_commit, diff)
+    if @format == :csv
+      format_csv(current_commit, diff)
+    else
+      format_normal(current_commit, diff)
+    end
+  end
+
+  def format_csv(commit, stats)
+    [ commit[:date],
+      stats[:files],
+      stats[:inserted],
+      stats[:deleted]
+    ].join(',')
+  end
+
+  def format_normal(commit, stats)
+    [ commit[:date],
+      stats[:files].to_s.rjust(5),
+      ascii_green("+#{stats[:inserted]}".rjust(7)),
+      ascii_red("-#{stats[:deleted]}".rjust(7))
+    ].join(' ')
+  end
+
+  def format_output(commit, stats, config)
+
+  end
+
+  protected
+
+  def ascii_green(msg)
+    "\e[32m#{msg}\e[0m"
+  end
+
+  def ascii_red(msg)
+    "\e[31m#{msg}\e[0m"
+  end
+
+  def git_output(cmd)
+    old_dir = Dir.pwd
+    Dir.chdir(@repoistory)
+    command_return = `#{cmd}`
+    Dir.chdir(old_dir)
+    command_return
+  end
+end
+
 def self.parse_options(args)
   options = OpenStruct.new
   options.repository = "."
@@ -38,84 +118,18 @@ def self.parse_options(args)
   options
 end
 
-def self.git_log(repo)
-  old_dir = Dir.pwd
-  Dir.chdir(repo)
-  log_data = %x{git log --first-parent --topo-order}
-  Dir.chdir(old_dir)
-  commit_data = log_data.split(/commit /m).reverse
-  commit_data.map do |blob|
-    begin
-    {
-      :hash => blob.scan(/^([a-z0-9]+)\n/)[0][0],
-      :author => blob.scan(/Author:\s+(.*?)\n/)[0][0],
-      :date => Date.parse(blob.scan(/Date:\s+(.*?)\n/)[0][0])
-    }
-    rescue
-      nil
-    end
-  end.compact
-end
 
-def self.git_diff(repo, from_rev, to_rev)
-  old_dir = Dir.pwd
-  Dir.chdir(repo)
-  diff_data = %x/git diff --shortstat #{from_rev}..#{to_rev}/
-  Dir.chdir(old_dir)
-  if diff_data =~ /(\d+) files.* (\d+) insert.* (\d+) delet/
-    {
-      :files => $1, :inserted => $2, :deleted => $3
-    }
-  else
-    nil
-  end
-end
-
-def self.ascii_green(msg)
-  "\e[32m#{msg}\e[0m"
-end
-
-def self.ascii_red(msg)
-  "\e[31m#{msg}\e[0m"
-end
-
-def self.format_csv(commit, stats)
-  [ commit[:date],
-    stats[:files],
-    stats[:inserted],
-    stats[:deleted]
-  ].join(',')
-end
-
-def self.format_normal(commit, stats)
-  [ commit[:date],
-    stats[:files].to_s.rjust(5),
-    ascii_green("+#{stats[:inserted]}".rjust(7)),
-    ascii_red("-#{stats[:deleted]}".rjust(7))
-  ].join(' ')
-end
-
-def self.format_output(commit, stats, config)
-  if config.format == :csv
-    format_csv(commit, stats)
-  else
-    format_normal(commit, stats)
-  end
-end
-
-config = parse_options(ARGV)
-
-commits = git_log(config.repository)
+historian = GitHistorian.new(parse_options(ARGV))
 
 dates_done = Set.new
 previous_commit = nil
 
 puts "date, files changed, lines added, lines removed"
-commits.each do |commit|
+historian.commits.each do |commit|
   if commit[:date] == commit[:date].beginning_of_week
     if previous_commit && !dates_done.include?(commit[:date])
-      stats = git_diff(config.repository, previous_commit[:hash], commit[:hash])
-      puts format_output(commit, stats, config)
+      diff = historian.diff(previous_commit, commit)
+      puts historian.formatted_diff(commit, diff)
     end
     dates_done << commit[:date]
     previous_commit = commit
