@@ -1,0 +1,13 @@
+
+Simple script to break down the number of files changed, lines added and lines deleted by week in a given Git repository. The file and line information is based on the Git diff output and is reaped from the `git log` command.
+
+============
+ Usage
+============
+
+  Usage: git-historian [options]
+      -r, --repository REPOSITORY      Location of the local git repository
+                                         (default: current directory)
+      -f, --format FORMAT              Output format
+                                       (options: csv, normal. default: normal)
+  
